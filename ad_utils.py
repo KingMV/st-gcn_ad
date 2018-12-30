@@ -13,7 +13,7 @@ def loader_initializer(feeder_args_dict, batch_size=32, suffle=True, num_workers
     return data_loader
 
 
-def map2ind(labels, from_arr=[134,88,59,254], to_arr=None, def_val=None):
+def map2ind(labels, from_arr=None, to_arr=None, def_val=None):
     labels = np.array(labels)
     if def_val is None:
         ret = labels
