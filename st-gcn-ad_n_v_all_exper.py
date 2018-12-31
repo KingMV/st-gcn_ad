@@ -215,8 +215,8 @@ def main():
     for i, n_sample in enumerate(class_n_iter(4)):
         print("Experiment split {}, normal classes {}".format(i, n_sample))
         n_v_all_exp(n_sample)
-        if i == 4:
-            break
+#         if i == 4:
+#             break
 
 
 if __name__ == '__main__':
