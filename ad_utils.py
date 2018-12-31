@@ -21,7 +21,7 @@ def map2ind(labels, from_arr=None, to_arr=None, def_val=None):
         ret = def_val * np.ones_like(labels)
     if from_arr is None:
         from_arr = list(set(labels))  # Get unique entires from labels
-        from_arr.sort()               # Sort them
+    from_arr.sort()               # Sort them
     if to_arr is None:
         to_arr = range(len(from_arr))
     for i, val in enumerate(from_arr):
