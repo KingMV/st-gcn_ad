@@ -43,7 +43,7 @@ class smallerModel(nn.Module):
     """
 
     def __init__(self, in_channels, num_class, graph_args,
-                 edge_importance_weighting, **kwargs):
+                 edge_importance_weighting, shallow=True, **kwargs):
         super().__init__()
 
         # load graph
@@ -54,20 +54,30 @@ class smallerModel(nn.Module):
 
         # build networks
         spatial_kernel_size = A.size(0)
-        temporal_kernel_size = 5  # To fit 1:2 downsampling in time
+        temporal_kernel_size = 9  # To fit 1:2 downsampling in time
         kernel_size = (temporal_kernel_size, spatial_kernel_size)
         self.data_bn = nn.BatchNorm1d(in_channels * A.size(1))
-        self.st_gcn_networks = nn.ModuleList((
-            st_gcn(in_channels, 64, kernel_size, 1, residual=False, **kwargs),
-            st_gcn(64, 64, kernel_size, 1, **kwargs),
-#             st_gcn(64, 64, kernel_size, 1, **kwargs),
-#             st_gcn(64, 64, kernel_size, 1, **kwargs),
-            st_gcn(64, 128, kernel_size, 2, **kwargs),
-            st_gcn(128, 128, kernel_size, 1, **kwargs),
-#             st_gcn(128, 128, kernel_size, 1, **kwargs),
-            st_gcn(128, 256, kernel_size, 2, **kwargs),
-            st_gcn(256, 256, kernel_size, 1, **kwargs),
-#             st_gcn(256, 256, kernel_size, 1, **kwargs),
+        if shallow:
+            self.st_gcn_networks = nn.ModuleList((
+                st_gcn(in_channels, 64, kernel_size, 2, residual=False, **kwargs),  # Stride 2 for early temporal downsampling
+                st_gcn(64, 64, kernel_size, 1, **kwargs),
+                st_gcn(64, 128, kernel_size, 2, **kwargs),
+                st_gcn(128, 128, kernel_size, 1, **kwargs),
+                st_gcn(128, 256, kernel_size, 2, **kwargs),
+                st_gcn(256, 256, kernel_size, 1, **kwargs),
+            ))
+        else:
+            self.st_gcn_networks = nn.ModuleList((
+                st_gcn(in_channels, 64, kernel_size, 2, residual=False, **kwargs),  # Stride 2 for early temporal downsampling
+                st_gcn(64, 64, kernel_size, 1, **kwargs),
+                st_gcn(64, 64, kernel_size, 1, **kwargs),
+                st_gcn(64, 64, kernel_size, 1, **kwargs),
+                st_gcn(64, 128, kernel_size, 2, **kwargs),
+                st_gcn(128, 128, kernel_size, 1, **kwargs),
+                st_gcn(128, 128, kernel_size, 1, **kwargs),
+                st_gcn(128, 256, kernel_size, 2, **kwargs),
+                st_gcn(256, 256, kernel_size, 1, **kwargs),
+                st_gcn(256, 256, kernel_size, 1, **kwargs),
         ))
 
         # initialize parameters for edge importance weighting
@@ -132,8 +142,9 @@ class smallerModel(nn.Module):
         return output, feature
 
 
-def train_and_eval(normal_classes):
+def train_and_eval(normal_classes, train_epochs=50, eval_iter_num=500, save_model=True):
     # Loading of original weights
+    print("Experiment train_and_eval started for classes {}".format(normal_classes))
     data_dir_path = '/root/sharedfolder/datasets/data_ssd/kinetics-skeleton/st-gcn_kinetics/Kinetics/kinetics-skeleton/'
     root_path = '/root/sharedfolder/Research/pose_ad/st-gcn/'
     graph_args = {'layout': 'openpose', 'strategy': 'spatial'}
@@ -172,7 +183,7 @@ def train_and_eval(normal_classes):
     model_filename = 'models/kinetics-nc{}_{}_{}.pt'.format(len(normal_classes), class_str, time_str)
     curr_weights_path = os.path.join(data_dir_path, model_filename)
 
-    for epoch in range(50):
+    for epoch in range(train_epochs):
         ep_start_time = time.time()
         for itern, [data, label] in enumerate(train_loader):
             # get data
@@ -193,7 +204,7 @@ def train_and_eval(normal_classes):
         for itern, [data, label_ld] in enumerate(eval_loader):
             # get data
             data = data.float().cuda()
-            label_mapped = map2ind(label_ld, from_arr=normal_classes, to_arr=None,  def_val=0) 
+            label_mapped = map2ind(label_ld.numpy(), from_arr=normal_classes, to_arr=None, def_val=0)
 
             # inference
             with torch.no_grad():
@@ -208,14 +219,15 @@ def train_and_eval(normal_classes):
         acc = (result_cls == label_frag).sum() / label_frag.shape[0]
 
         print("Epoch {} Done, took {}sec, loss={}, acc={}".format(epoch, time.time() - ep_start_time, loss, acc))
-        if acc > 0.9:
+        if acc > 0.88:
             break
-        torch.save(model.state_dict(), curr_weights_path)
+        if save_model:
+            torch.save(model.state_dict(), curr_weights_path)
     print("Train and Eval Done")
 
-
-    # Abnormal Class Inference
-    # Evaluation loop
+    #
+    # # Abnormal Class Inference
+    # # Evaluation loop
     test_loader = data_loader['random_test']
     softmax = nn.Softmax(dim=1)
     loss_fn = nn.CrossEntropyLoss()
@@ -225,13 +237,14 @@ def train_and_eval(normal_classes):
     outputs = []
     confusion_mat = np.zeros([5,5], dtype=np.int32)
     evaluation = True
+    model.eval()
 
     for itern, [data, label_ld] in enumerate(test_loader):
         # get data
         data = data.float().cuda()
-        label_ad_curr = map2ind(label_ld, from_arr=normal_classes, to_arr=np.ones_like(normal_classes), def_val=0)
+        label_ad_curr = map2ind(label_ld.data.cpu().numpy(), from_arr=normal_classes, to_arr=np.ones_like(normal_classes), def_val=0)
         label_ad = np.concatenate((label_ad, label_ad_curr))
-        label_mapped = map2ind(label_ld, from_arr=normal_classes, to_arr=None, def_val=0) # Assign output probs regardless of abnormal classes,
+        label_mapped = map2ind(label_ld.data.cpu().numpy(), from_arr=normal_classes, to_arr=None, def_val=0) # Assign output probs regardless of abnormal classes,
         label = torch.from_numpy(label_mapped).cuda()
 
         # inference
@@ -250,7 +263,7 @@ def train_and_eval(normal_classes):
         if itern % 50 == 0:
             print("Iteration {}".format(itern))
         # Stop
-        if itern == 500:
+        if itern == eval_iter_num:
             break
 
     # result = np.concatenate(result_frag)
@@ -272,11 +285,28 @@ def train_and_eval(normal_classes):
 
 
 def main():
-    normal_classes = [3, 17, 55, 345]
-    for i, n_sample in enumerate(class_n_iter(4)):
-        train_and_eval(n_sample)
-        if i == 30:
+    start = 0
+    num_classes = 400
+    split_len = 4
+    np.random.seed(0)
+    class_permutation = np.random.permutation(num_classes)
+
+    # for i, n_sample in enumerate(class_n_iter(4)):
+    # 4-v-all experiment
+    for i in range(start, num_classes//split_len):
+        n_sample = class_permutation[i*split_len: (i+1)*split_len]
+        print("Deep {}-v-all Iteration {}".format(split_len, i))
+        train_and_eval(n_sample, train_epochs=10, save_model=False)
+        if i == 22:
             break
+
+    # 300-v-rest experiment
+    split_len = 300
+    for i in range(22):
+        np.random.seed(i)
+        class_permutation = np.random.permutation(num_classes)[:split_len]
+        print("Deep {}-v-all Iteration {}".format(split_len, i))
+        train_and_eval(n_sample, train_epochs=10, save_model=False)
 
 
 if __name__ == '__main__':
