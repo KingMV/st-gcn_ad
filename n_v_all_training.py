@@ -142,7 +142,7 @@ class smallerModel(nn.Module):
         return output, feature
 
 
-def train_and_eval(normal_classes, train_epochs=50, eval_iter_num=500, save_model=True):
+def train_and_eval(normal_classes, train_epochs=50, eval_iter_num=500, shallow=True, save_model=True):
     # Loading of original weights
     print("Experiment train_and_eval started for classes {}".format(normal_classes))
     data_dir_path = '/root/sharedfolder/datasets/data_ssd/kinetics-skeleton/st-gcn_kinetics/Kinetics/kinetics-skeleton/'
@@ -151,7 +151,7 @@ def train_and_eval(normal_classes, train_epochs=50, eval_iter_num=500, save_mode
     
     batch_size = 32
     graph_args_dict = {'strategy': 'spatial', 'layout': 'openpose'}
-    model = smallerModel(3, 4, graph_args_dict, edge_importance_weighting=True)
+    model = smallerModel(3, 4, graph_args_dict, shallow=shallow, edge_importance_weighting=True)
 
     data_loader = dict()
     feeder_args = dict()
@@ -296,7 +296,7 @@ def main():
     for i in range(start, num_classes//split_len):
         n_sample = class_permutation[i*split_len: (i+1)*split_len]
         print("Deep {}-v-all Iteration {}".format(split_len, i))
-        train_and_eval(n_sample, train_epochs=10, save_model=False)
+        train_and_eval(n_sample, train_epochs=10, shallow=False, save_model=False)
         if i == 22:
             break
 
@@ -306,7 +306,7 @@ def main():
         np.random.seed(i)
         class_permutation = np.random.permutation(num_classes)[:split_len]
         print("Deep {}-v-all Iteration {}".format(split_len, i))
-        train_and_eval(n_sample, train_epochs=10, save_model=False)
+        train_and_eval(n_sample, train_epochs=10, shallow=False, save_model=False)
 
 
 if __name__ == '__main__':
